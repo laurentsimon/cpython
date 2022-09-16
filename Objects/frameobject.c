@@ -501,6 +501,9 @@ frame_tp_clear(PyFrameObject *f)
 
     Py_CLEAR(f->f_trace);
 
+    /* Capabilities */
+    f->capabilities = 0;
+
     /* locals */
     slots = f->f_code->co_nlocals + PyTuple_GET_SIZE(f->f_code->co_cellvars) + PyTuple_GET_SIZE(f->f_code->co_freevars);
     fastlocals = f->f_localsplus;
@@ -698,6 +701,9 @@ _PyFrame_New_NoTrack(PyThreadState *tstate, PyCodeObject *code,
         f->f_locals = NULL;
         f->f_trace = NULL;
     }
+    // Capabilities
+    f->capabilities = 20;
+    
     f->f_stacktop = f->f_valuestack;
     f->f_builtins = builtins;
     Py_XINCREF(back);
