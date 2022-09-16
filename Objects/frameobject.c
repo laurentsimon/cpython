@@ -440,6 +440,7 @@ frame_dealloc(PyFrameObject *f)
     Py_DECREF(f->f_globals);
     Py_CLEAR(f->f_locals);
     Py_CLEAR(f->f_trace);
+    f->capabilities = 0; // TODO: proper size
 
     co = f->f_code;
     if (co->co_zombieframe == NULL)

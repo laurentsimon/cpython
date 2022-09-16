@@ -759,6 +759,12 @@ _PyEval_EvalFrameDefault(PyFrameObject *f, int throwflag)
     _Py_atomic_int * const eval_breaker = &ceval->eval_breaker;
     PyCodeObject *co;
 
+    char * d = NULL;
+    if ((d = getenv("MY_DEBUG")) != NULL){
+        printf("_PyEval_EvalFrameDefault\n");
+        printf("cap: %u\n", f->capabilities);
+    }
+   
     /* when tracing we set things up so that
 
            not (instr_lb <= current_bytecode_offset < instr_ub)
@@ -4075,6 +4081,9 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
     }
     fastlocals = f->f_localsplus;
     freevars = f->f_localsplus + co->co_nlocals;
+
+    /* Set capabilities */
+    f->capabilities = 10; // magic value
 
     /* Create a dictionary for keyword parameters (**kwags) */
     if (co->co_flags & CO_VARKEYWORDS) {
