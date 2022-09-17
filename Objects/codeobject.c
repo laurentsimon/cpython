@@ -234,7 +234,12 @@ PyCode_NewWithPosOnlyArgs(int argcount, int posonlyargcount, int kwonlyargcount,
     co->co_zombieframe = NULL;
     co->co_weakreflist = NULL;
     co->co_extra = NULL;
-
+    char * d = NULL;
+    if ((d = getenv("MY_DEBUG")) != NULL){
+        printf("PyCode_NewWithPosOnlyArgs: \n");
+        PyObject_Print(filename, stdout, 0);
+        printf("\n\n");
+    }
     co->co_opcache_map = NULL;
     co->co_opcache = NULL;
     co->co_opcache_flag = 0;

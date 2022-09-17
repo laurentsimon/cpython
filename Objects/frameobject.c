@@ -701,9 +701,27 @@ _PyFrame_New_NoTrack(PyThreadState *tstate, PyCodeObject *code,
         f->f_locals = NULL;
         f->f_trace = NULL;
     }
-    // Capabilities
-    f->capabilities = 20;
-    
+    // Inherit the capabilities.
+    int p = (getenv("MY_DEBUG") != NULL);
+    if (back == NULL){
+        if (p){
+            printf("_PyFrame_New_NoTrack: back is null\n");
+        }
+        // No stack frame, no cap.
+        f->capabilities = 0;
+    } else {
+        if (tstate == NULL || tstate->frame == NULL){
+            if (p){
+                printf("_PyFrame_New_NoTrack: tstate or frame is null\n");
+            }
+            *(int*)0 = 0;
+        }
+        // Inherit the caller's capabilities.
+        f->capabilities = tstate->frame->capabilities;
+        if (p){
+            printf("_PyFrame_New_NoTrack cap: %u\n\n", tstate->frame->capabilities);
+        }
+    }
     f->f_stacktop = f->f_valuestack;
     f->f_builtins = builtins;
     Py_XINCREF(back);

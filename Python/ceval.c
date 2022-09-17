@@ -27,6 +27,8 @@
 #include "structmember.h"
 
 #include <ctype.h>
+#include <string.h>
+
 
 #ifdef Py_DEBUG
 /* For debugging the interpreter: */
@@ -738,6 +740,11 @@ PyObject *
 PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
 {
     PyInterpreterState *interp = _PyInterpreterState_GET_UNSAFE();
+    // Sanity check
+    if (interp->eval_frame != &_PyEval_EvalFrameDefault){
+        printf("caught a different eval frame fn\n");
+        *(int*)0 = 0;
+    }
     return interp->eval_frame(f, throwflag);
 }
 
@@ -759,11 +766,38 @@ _PyEval_EvalFrameDefault(PyFrameObject *f, int throwflag)
     _Py_atomic_int * const eval_breaker = &ceval->eval_breaker;
     PyCodeObject *co;
 
+    // We can use the code in _PyObject_Dump() from object.c
+    // BUT: it locks the GIL, so this would be incredibly slow.
+    #if 0
     char * d = NULL;
     if ((d = getenv("MY_DEBUG")) != NULL){
-        printf("_PyEval_EvalFrameDefault\n");
-        printf("cap: %u\n", f->capabilities);
+        // printf("> _PyEval_EvalFrameDefault\n");
+        // // printf("    cap: %u\n", f->capabilities);
+        if (f->f_code == NULL){
+            printf("> no f_code\n");
+            *(int*)0 = 0; // this will seg fault, and ignore any sort of NDEBUG.
+        }
+        if (f->f_code->co_filename != NULL){
+            printf("    co_filename: \n");
+            // This fails because exception is turned on.
+            // Need a better way to get the filename
+            _PyObject_Dump(f->f_code->co_filename);
+            printf("\n\n");
+        }
+        
+        // printf("    co_name: \n");
+        // if (PyObject_Print(f->f_code->co_name, stdout, 0) != 0) {
+        //     *(int*)0 = 0;
+        // }
+        // printf("\n\n");
+        //PyObject *co_lnotab;        /* string (encoding addr<->lineno mapping) See
+                           
+        if (f->capabilities != 20 && f->capabilities != 10){
+            *(int*)0 = 0; // this will seg fault, and ignore any sort of NDEBUG.
+        }
     }
+    #endif
+
    
     /* when tracing we set things up so that
 
@@ -3503,6 +3537,7 @@ main_loop:
             PREDICTED(CALL_FUNCTION);
             PyObject **sp, *res;
             sp = stack_pointer;
+
             res = call_function(tstate, &sp, oparg, NULL);
             stack_pointer = sp;
             PUSH(res);
@@ -4082,7 +4117,14 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
     fastlocals = f->f_localsplus;
     freevars = f->f_localsplus + co->co_nlocals;
 
-    /* Set capabilities */
+    /* Set capabilities 
+        I'm assumming this is the top level funciton.
+        Need to also handle other types of calling the interpreter?
+    */
+    char * d = NULL;
+    if ((d = getenv("MY_DEBUG")) != NULL){
+        printf("** _PyEval_EvalCodeWithName **\n\n");
+    }
     f->capabilities = 10; // magic value
 
     /* Create a dictionary for keyword parameters (**kwags) */
@@ -4964,6 +5006,33 @@ call_function(PyThreadState *tstate, PyObject ***pp_stack, Py_ssize_t oparg, PyO
     Py_ssize_t nkwargs = (kwnames == NULL) ? 0 : PyTuple_GET_SIZE(kwnames);
     Py_ssize_t nargs = oparg - nkwargs;
     PyObject **stack = (*pp_stack) - nargs - nkwargs;
+
+    char * d = NULL;
+    if ((d = getenv("MY_DEBUG")) != NULL){
+        PyObject * co = tstate->frame->f_code->co_filename;
+        PyObject * so = PyObject_Str(co);
+        if (so == NULL){
+            assert(!PyErr_Occurred());
+        }
+        const char * fn = PyUnicode_AsUTF8(so);
+        if (fn == NULL){
+            assert(!PyErr_Occurred());
+        }
+
+        printf("call to: %s\n", PyEval_GetFuncName(func));
+        printf("    in file: %s\n", fn);
+        printf("    cap: %u\n\n", tstate->frame->capabilities);
+        printf("    name: %s\n", &fn[strlen(fn)-11]);
+        if (
+            (strlen(fn) >= 11) &&
+            (strcmp(&fn[strlen(fn)-11], "mymodule.py") == 0)
+            ){
+            tstate->frame->capabilities = 9;
+        }
+        //printf("\n\n");
+        Py_DECREF(so);
+    }
+
 
     if (tstate->use_tracing) {
         x = trace_call_function(tstate, func, stack, nargs, kwnames);
