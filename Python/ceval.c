@@ -4995,6 +4995,17 @@ trace_call_function(PyThreadState *tstate,
     return _PyObject_Vectorcall(func, args, nargs | PY_VECTORCALL_ARGUMENTS_OFFSET, kwnames);
 }
 
+int ends_with(const char *src, const char *end) {
+    size_t end_len = strlen(end);
+    if (
+        (strlen(src) >= end_len) &&
+        (strcmp(&src[strlen(src)-end_len], end) == 0)
+    ){
+        return 1;
+    }
+    return 0;
+}
+
 /* Issue #29227: Inline call_function() into _PyEval_EvalFrameDefault()
    to reduce the stack consumption. */
 Py_LOCAL_INLINE(PyObject *) _Py_HOT_FUNCTION
@@ -5009,28 +5020,168 @@ call_function(PyThreadState *tstate, PyObject ***pp_stack, Py_ssize_t oparg, PyO
 
     char * d = NULL;
     if ((d = getenv("MY_DEBUG")) != NULL){
-        PyObject * co = tstate->frame->f_code->co_filename;
-        PyObject * so = PyObject_Str(co);
-        if (so == NULL){
+        // Callee.
+        const char *callee_func_str = PyEval_GetFuncName(func);
+        // Caller.
+        PyObject * caller_filename_obj = tstate->frame->f_code->co_filename;
+        PyObject * caller_filename_obj_str = PyObject_Str(caller_filename_obj);
+        if (caller_filename_obj_str == NULL){
             assert(!PyErr_Occurred());
         }
-        const char * fn = PyUnicode_AsUTF8(so);
-        if (fn == NULL){
+        const char * caller_filename_str = PyUnicode_AsUTF8(caller_filename_obj_str);
+        if (caller_filename_str == NULL){
             assert(!PyErr_Occurred());
+        }
+        int check_parent = 0;
+        unsigned new_cap = 0; // TODO: read from a config file.
+        printf("\ncall to: %s\n", callee_func_str);
+        printf("    in file: %s\n", caller_filename_str);
+        printf("    current cap: %u\n", tstate->frame->capabilities);
+        // Test with several direct dependencies. Hardcoded cap value would be taken from a config file
+        // in practice.
+        if (
+            (ends_with(caller_filename_str, "mymodule.py") == 1) &&
+            // Note: this will become a check for the current constraint / perm.
+            (1 != tstate->frame->capabilities) // this would be a "latest-constraint present" function
+            ){
+            new_cap = 1;
+            check_parent = 1;
+        } else if (
+            (ends_with(caller_filename_str, "mymodule2.py") == 1) &&
+            // Note: this will become a check for the current constraint / perm.
+            (2 != tstate->frame->capabilities)  // this would be a "latest-constraint present" function
+            ){
+            new_cap = 2;
+            check_parent = 1;
+        } else if (
+            (ends_with(caller_filename_str, "mymodule3.py") == 1) &&
+            // Note: this will become a check for the current constraint / perm.
+            (3 != tstate->frame->capabilities)  // this would be a "latest-constraint present" function
+            ){
+            new_cap = 3;
+            check_parent = 1;
         }
 
-        printf("call to: %s\n", PyEval_GetFuncName(func));
-        printf("    in file: %s\n", fn);
-        printf("    cap: %u\n\n", tstate->frame->capabilities);
-        printf("    name: %s\n", &fn[strlen(fn)-11]);
-        if (
-            (strlen(fn) >= 11) &&
-            (strcmp(&fn[strlen(fn)-11], "mymodule.py") == 0)
-            ){
-            tstate->frame->capabilities = 9;
+        // Parent caller
+        #if 1
+        struct _frame * parent_frame = tstate->frame->f_back;
+        if (parent_frame != NULL && parent_frame->f_code != NULL){
+
+            if (parent_frame->f_code->co_filename == NULL){
+                assert(!PyErr_Occurred());
+            }
+
+            PyObject * parent_filename_obj = parent_frame->f_code->co_filename;
+            PyObject * parent_filename_obj_str = PyObject_Str(parent_filename_obj);
+            if (parent_filename_obj_str == NULL){
+                assert(!PyErr_Occurred());
+            }
+            const char * parent_filename_str = PyUnicode_AsUTF8(parent_filename_obj_str);
+            if (parent_filename_str == NULL){
+                assert(!PyErr_Occurred());
+            }
+            printf("    caller file: %s\n", parent_filename_str);
+
+            if (check_parent > 0){    
+                if (ends_with(parent_filename_str, "test.py") == 1){
+                    tstate->frame->capabilities = new_cap;
+                    printf("cap scoped down to %u\n", new_cap);
+                }
+                
+                Py_DECREF(parent_filename_obj_str);
+            }
+
+            // Always check whether the cross-boundary call
+            // is "acceptable". For testing here, we hardcoded it.
+            // I harcoded the file name. In practice, this would just be
+            // the dir path to a dependency.
+            #define MAX_SOURCES (10)
+            struct sink {
+                const char * name;
+                const char *sources[MAX_SOURCES];
+            };
+            // Note: only works for static arrays.
+            #define LEN(x) (sizeof(x) / sizeof(x[0]))
+            struct sink sinks[] = {
+                {
+                .name = "test.py",
+                .sources = {
+                        "mymodule.py",
+                        "mymodule2.py",
+                        "mymodule3.py",
+                        NULL,
+                    },
+                },
+                {
+                .name = "mymodule.py",
+                .sources = {
+                        "mymodule2.py",
+                        NULL,
+                    },
+                },
+                {
+                .name = "mymodule2.py",
+                .sources = {
+                        "mymodule3.py",
+                        NULL,
+                    },
+                },
+            };
+
+            // same package can always call within itself.
+            if (strcmp(parent_filename_str, caller_filename_str) != 0){
+                const char **sources = NULL;
+                for (size_t i=0; i<LEN(sinks); ++i){
+                    if (ends_with(parent_filename_str, sinks[i].name) == 1) {
+                        sources = sinks[i].sources;
+                        break;
+                    } 
+                }
+                
+                if (sources != NULL){
+                    printf("found sources for: %s\n", parent_filename_str);
+                    int correct = 0;
+                    const char ** source_ptr = sources;
+                    while (*source_ptr != NULL){
+                        //printf("compare to '%s'\n", *source_ptr);
+                        if (ends_with(caller_filename_str, *source_ptr)){
+                            correct = 1;
+                            break;
+                        }
+                        source_ptr++;
+                    }
+                    // Builtins modules are allows fine, <frozen importlib._bootstrap>.
+                    if (correct == 0 && ends_with(caller_filename_str, ">") == 0){
+                        printf("invalid edge: %s -> %s\n", parent_filename_str, caller_filename_str);
+                        *(int*)0 = 0;
+                    }
+                }
+            }
         }
+
+        Py_DECREF(caller_filename_obj_str);
+        
+        #endif
+        printf("\n");
+
+        // if (caller_frame->f_code->co_filename == NULL){
+        //     assert(!PyErr_Occurred());
+        // }
+        
+        // co = caller_frame->f_code->co_filename;
+        // so = PyObject_Str(co);
+        // if (so == NULL){
+        //     assert(!PyErr_Occurred());
+        // }
+        // fn = PyUnicode_AsUTF8(so);
+        // if (fn == NULL){
+        //     assert(!PyErr_Occurred());
+        // }
+
+        // printf("caller file: %s\n", fn);
+        // Py_DECREF(so);
         //printf("\n\n");
-        Py_DECREF(so);
+        
     }
 
 
