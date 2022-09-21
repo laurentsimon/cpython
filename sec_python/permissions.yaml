@@ -36,7 +36,10 @@ defaults:
       - read | write: https://cloudprofiler.googleapis.com/**:443
 
   - name: Read config file
-    inheritance-to-callee: false # This only works if we're certain it's the main program's code reading this file.
+    # This only works if we're certain it's the main program's code reading this file,
+    # so I think it's harder to use and maybe discouraged. Instead, better set the permissions
+    # for direct dependencies explicitely.
+    inheritance-to-callee: false
     fs:
       - read: ${{ env.GOOGLEBASE }}/www/config/*
 
