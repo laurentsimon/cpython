@@ -30,6 +30,7 @@ defaults:
       - write: ${{ env.GOOGLEBASE }}/www/user_data/*
 
   - name: Accept https connections and reply
+    id: accept-connections
     net:
       - read | write: https://cloudprofiler.googleapis.com/**:443
 
@@ -37,13 +38,17 @@ defaults:
 # are calculated as the logical "and" of the inherited permissions
 # of the caller and the one declared here.
 - urllib3:
+  needs: [__main__]
   - fs: none
   - code: none
   - net:
     # Note: this allows read and write for arbitrary ports / domains.
     # Since the permission of the caller (__main__) are more restritive,
-    # the locail "and" will be used since inheritance is enabled.
-    - read | write: **
+    # the logical "and" will be used since inheritance is enabled.
+    # - read | write: **
+    
+    # We can re-use a previous rule.
+    uses: ${{ needs.__main__.id.accept-connections}}
   - rpc: none
 
 - json-parser:
