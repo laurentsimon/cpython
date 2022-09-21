@@ -1,0 +1,68 @@
+version: 1
+
+defaults:
+  # `linux` is a pre-built policy allows access to commonly-used directories / files like /etc/mimes.types, etc
+  # this accepts a pred-define list of built-inn permissions, but can also use a file path if someone wants to customize it.
+  - permissions: linux
+
+  # `allow-all` means the list of permissions declared are to be removed.
+  #   This is useful for developers who want to add restriction little by little,
+  #   in particular during exploration / migration to the permission model
+  # `deny-all` means the list of permissions declared are allowed.
+  #   Once users are comfortable with their permissions, they can use this mode.
+  - enforcement: deny-all
+
+  # Permissions given to a package, are, by defult, inherited by all its callees.
+  - inheritance-to-callee: true
+
+
+# Main program permissions.
+- __main__:
+  - name: Read the server folders
+    fs:
+      - read: ${{ env.GOOGLEBASE }}/www/html/*.html
+      - read: ${{ env.GOOGLEBASE }}/www/html/robots.txt
+      - read: ${{ env.GOOGLEBASE }}/www/html/**/*.html
+      - read: ${{ env.GOOGLEBASE }}/www/static/**
+
+  - name: Write user files
+    fs:
+      - write: ${{ env.GOOGLEBASE }}/www/user_data/*
+
+  - name: Accept https connections and reply
+    net:
+      - read | write: https://cloudprofiler.googleapis.com/**:443
+
+# Direct dependencies. At runtime, the permissions
+# are calculated as the logical "and" of the inherited permissions
+# of the caller and the one declared here.
+- urllib3:
+  - fs: none
+  - code: none
+  - net:
+    # Note: this allows read and write for arbitrary ports / domains.
+    # Since the permission of the caller (__main__) are more restritive,
+    # the locail "and" will be used since inheritance is enabled.
+    - read | write: **
+  - rpc: none
+
+- json-parser:
+  - fs: none
+  - code: none
+  - net: none
+  - rpc: none
+
+- regex-util:
+  - fs: none
+  - code: none
+  - net: none
+  - rpc: none
+
+# Additional permission just for this module.
+# Note: other permissions are inherited from the caller.
+- jinja2.environment:
+  - name: Only this module can load arbitrary code
+    inheritance-from-caller: false # This means it's an additional permissions, for really dangerous permissions
+    inheritance-to-callee: false # We only allow this module to have this permisison, it won't be inherited by its callees. Useful for Java for frameworks that require introspection
+    code:
+      - read | execute: ${{ env.GOOGLEBASE }}/**
