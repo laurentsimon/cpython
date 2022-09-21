@@ -26,8 +26,9 @@ defaults:
       - read: ${{ env.GOOGLEBASE }}/www/static/**
 
   - name: Write user files
+    id: db-file
     fs:
-      - write: ${{ env.GOOGLEBASE }}/www/user_data/*
+      - read | write: ${{ env.GOOGLEBASE }}/www/user_data/*
 
   - name: Accept https connections and reply
     id: accept-connections
@@ -50,6 +51,16 @@ defaults:
     # We can re-use a previous rule.
     uses: ${{ needs.__main__.id.accept-connections}}
   - rpc: none
+
+- db-query:
+  needs: [__main__]
+  - fs:
+    uses: ${{ needs.__main__.id.db-file}}
+  - net: none
+  # Note: rpc and code are't really needed since main does not have access and the package inherites its permssions.
+  # It's good practice to make it explicit, though.
+  - rpc: none
+  - code: none
 
 - json-parser:
   - fs: none
