@@ -35,6 +35,11 @@ defaults:
     net:
       - read | write: https://cloudprofiler.googleapis.com/**:443
 
+  - name: Read config file
+    inheritance-to-callee: false # This only works if we're certain it's the main program's code reading this file.
+    fs:
+      - read: ${{ env.GOOGLEBASE }}/www/config/*
+
 # Direct dependencies. At runtime, the permissions
 # are calculated as the logical "and" of the inherited permissions
 # of the caller and the one declared here.
